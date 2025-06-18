@@ -68,11 +68,11 @@ class TradingApp(EWrapper, EClient):
 
         #print("Collecting data "+str(datetime_t))
         #detect start of 1 min bracket
-        if datetime_t.second!=5 and datetime_t.second!=0:
+        if datetime_t.second!=55 and datetime_t.second!=0:
             self.period_high = max(self.period_high,high)
             self.period_low = min(self.period_low,low)
 
-        elif datetime_t.second==5:
+        elif datetime_t.second==0:
             #start of OHLC
             self.period_flag = False
             self.period_open = open_
@@ -80,11 +80,12 @@ class TradingApp(EWrapper, EClient):
             self.period_low = low
             self.period_close = close
 
-        elif datetime_t.second==0:
+        elif datetime_t.second==55:
             self.period_close = close
             self.period_high = max(self.period_high, high)
             self.period_low = min(self.period_low, low)
             if self.period_open!=0:
+                datetime_t = datetime_t.replace(second=0, microsecond=0)
                 temp = pd.DataFrame([[datetime_t,self.period_open,self.period_high,self.period_low,self.period_close,0]],
                                 columns=['date','open','high','low','close','ema9']).set_index('date')
                 self.prices = pd.concat([self.prices,temp], axis=0)
@@ -98,8 +99,12 @@ underlying.secType = "CASH"
 underlying.exchange = "IDEALPRO"
 underlying.currency = "USD"
 
-def ema_cal(close_t,ema_t0,day=9,smoothing=4):
+def ema_cal(close_t,ema_t0,day=9,smoothing=2):
     ema_data = (close_t*smoothing/(day+1)) + [ema_t0*(1 - smoothing/(day+1))]
+    return ema_data
+
+
+#this is where the strategy goes
 def websocket_con():
     stitched = False
     print("Scanning for latest data")
@@ -107,6 +112,7 @@ def websocket_con():
         time.sleep(1)
         if app.period_flag:
             print("latest data obtained, "+str(len(app.prices)>0 and not stitched))
+
 
             #check if stitch is required
             if len(app.prices)>0 and not stitched:
@@ -130,19 +136,26 @@ def websocket_con():
                 else:
                     print("Why here?")
 
-            last_price = app.prices.tail(1)
-            if len(app.prices)>9:
-                last_last_price = app.prices.tail(2).head(1)
-                ema_t = ema_cal(last_price.close.iloc[0],last_last_price.ema9.iloc[0])
-            elif len(app.prices==9):
-                ema_t = ema_cal(last_price.close,app.prices.close.mean())
-            elif len(app.prices<9):
-                ema_t = 0
+            else:
+                last_price = app.prices.tail(1)
+                if len(app.prices)>9:
 
+                    last_last_price = app.prices.tail(2).head(1)
+                    print("calculating EMA: close = "+str(last_price.close.iloc[0])+" last ema = "+str(last_last_price.ema9.iloc[0]))
+                    ema_t = ema_cal(last_price.close.iloc[0],last_last_price.ema9.iloc[0])
+                elif len(app.prices)==9:
+                    ema_t = ema_cal(last_price.close,app.prices.close.mean())
+                elif len(app.prices)<9:
+                    ema_t = 0
+
+
+                last_price['ema9'] = ema_t
+                print(last_price)
+                app.prices.update(last_price)
+                print(app.prices)
+                print("Finish calculating EMA")
+                app.prices.to_csv("simulated.csv")
             app.period_flag = False
-            print(app.prices)
-            last_price['ema9'] = ema_t
-            app.prices.update(last_price)
 
 def streamData():
     print("Starting to stream data...")
