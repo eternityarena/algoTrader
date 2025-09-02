@@ -95,9 +95,9 @@ class TradingApp(EWrapper, EClient):
 
 
 underlying = Contract()
-underlying.symbol = "EUR"
-underlying.secType = "CASH"
-underlying.exchange = "IDEALPRO"
+underlying.symbol = "AVGO"
+underlying.secType = "STK"
+underlying.exchange = "SMART"
 underlying.currency = "USD"
 ema_period = 9
 turning_point_window = 5
@@ -224,7 +224,7 @@ def websocket_con():
                 num_sec= (first_live_datetime-last_historical_datetime).seconds
                 time_str = first_live_datetime.strftime('%Y%m%d %H:%M:%S') + " Asia/Singapore"
                 if num_sec>60:
-                    app.reqHistoricalData(app.nextId(), underlying, time_str, str(num_sec-60)+" S", '1 Min', 'MIDPOINT', 1, 1, False, [])
+                    app.reqHistoricalData(app.nextId(), underlying, time_str, str(num_sec-60)+" Min", '15 Min', 'MIDPOINT', 1, 1, False, [])
                 elif not stitched:
                     #stitch and calculate ema
                     print("Stitching")

@@ -6,17 +6,20 @@ import random
 import ta.trend as ta_trend
 import numpy as np
 import matplotlib.pyplot as plt
-
+from datetime import datetime
 class MyStrategy(Strategy):
     strat_commissions = Commissions(amount=2,type=Commissions.COMMS_FIXED)
     ema14 = None
     turning_point = {}
     min_max_df = None
     state = None
+    ema_state =0
     def __init__(self, name, prices, capital: float):
         super().__init__(name,prices,capital)
-        self.ema14 = ta_trend.EMAIndicator(prices['close'], window= 9, fillna = False)
-        self.prices['ema9'] = self.ema14.ema_indicator()
+        self.ema9 = ta_trend.EMAIndicator(prices['close'], window= 9, fillna = False)
+        self.ema14 = ta_trend.EMAIndicator(prices['close'], window=14, fillna=False)
+        self.prices['ema9'] = self.ema9.ema_indicator()
+        self.prices['ema14'] = self.ema14.ema_indicator()
         self.turning_point= self.find_turning_points(data = self.prices['ema9'].to_list(),window_size=5)
 
         self.prices['ema9_max'] = [0 if x not in self.turning_point.keys()  else self.turning_point[x] for x in self.prices.index]
@@ -41,19 +44,19 @@ class MyStrategy(Strategy):
         """Finds turning points (local min/max) in a time series using a sliding window."""
         turning_points = {}
         turning_points_type = []
-        for i in range(window_size, len(data) - window_size):
+        for i in range(2*window_size, len(data)):
             try:
-                window = data[i - window_size: i + window_size + 1]
+                window = data[i - 2*window_size: i]
                 center = window[window_size]
                 if center == np.max(window):
                     turning_points[i]=1
-                elif center == np.min(window):
+                elif center == np.min(window+window):
                     turning_points[i]=-1
             except Exception as e:
                 print("Error")
 
         return turning_points
-
+    '''
     def next_t(self,price_t,idx):
         rnd_test = random.random()
         n=3
@@ -68,6 +71,7 @@ class MyStrategy(Strategy):
                 if len(last_n_peak)>n-1 and len(last_n_bottom)>n-1:
                     if self.is_down_trend_reversal(last_n_peak['ema9'].to_list()) and self.is_down_trend_reversal(last_n_bottom['ema9'].to_list()):
                         if price_t.date==last_n_bottom['date'].tail(1).iloc[0]:
+                        #if datetime.strptime(price_t.date, '%m/%d/%Y %H:%M') - last_n_bottom['date'].tail(1).iloc[0]>5:
                             print("Down Trend reversing")
                             self.state = "long"
                             self.oms.buy(ticker="EURUSD", quantity=20000, transact_price=price_t['close'],
@@ -99,6 +103,59 @@ class MyStrategy(Strategy):
         #if >0.5:
         #    print(rnd_test)
         #
+    '''
+    def next_t(self, price_t, idx):
+        rnd_test = random.random()
+        n = 3
+
+        if self.state is None:
+            if np.isnan(price_t['ema9']) or np.isnan(price_t['ema14']):
+                if price_t['ema9']>price_t['ema14']:
+                    self.ema_state = 1
+                elif price_t['ema9']<price_t['ema14']:
+                    self.ema_state = -1
+                return
+            else:
+                if price_t['ema9']>price_t['ema14']+0.000001 and self.ema_state==-1:
+                    # if datetime.strptime(price_t.date, '%m/%d/%Y %H:%M') - last_n_bottom['date'].tail(1).iloc[0]>5:
+                    print("Down Trend reversing")
+                    self.state = "long"
+                    self.oms.buy(ticker="EURUSD", quantity=20000, transact_price=price_t['close'],
+                                 commissions=self.strat_commissions, type=Orders.MARKET_ORDER, time_indicator=idx)
+                    # stop loss at previous top
+                elif price_t['ema9']<price_t['ema14']-0.000001 and self.ema_state==1:
+                    print("Up Trend reversing")
+                    self.state = "short"
+                    self.oms.sell(ticker="EURUSD", quantity=20000, transact_price=price_t['close'],
+                                  commissions=self.strat_commissions, type=Orders.MARKET_ORDER, time_indicator=idx)
+                else:
+                    print("No Trend")
+
+                if price_t['ema9']>price_t['ema14']:
+                    self.ema_state = 1
+                elif price_t['ema9']<price_t['ema14']:
+                    self.ema_state = -1
+
+        else:
+            if self.state == 'long':
+                last_turning = self.min_max_df[self.min_max_df.index == idx]
+                if len(last_turning) > 0:
+                    if last_turning['ema9_max'].iloc[0] == 1 and price_t['ema9'] < price_t['ema14']:
+                        self.oms.sell(ticker="EURUSD", quantity=20000, transact_price=price_t['close'],
+                                      commissions=self.strat_commissions, type=Orders.MARKET_ORDER, time_indicator=idx)
+                        self.state = None
+            elif self.state == 'short':
+                last_turning = self.min_max_df[self.min_max_df.index == idx]
+                if len(last_turning) > 0:
+                    if last_turning['ema9_max'].iloc[0] == -1 and price_t['ema9'] > price_t['ema14']:
+                        self.oms.buy(ticker="EURUSD", quantity=20000, transact_price=price_t['close'],
+                                     commissions=self.strat_commissions, type=Orders.MARKET_ORDER, time_indicator=idx)
+                        self.state = None
+
+            if price_t['ema9'] > price_t['ema14']:
+                self.ema_state = 1
+            elif price_t['ema9'] < price_t['ema14']:
+                self.ema_state = -1
 
     def is_increasing(self,series):
         for num in range(0,len(series)-1):
